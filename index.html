@@ -294,7 +294,6 @@
             color: var(--accent);
             margin-bottom: 8px;
         }
-        /* Removed supply and bar styles */
         .rarity-benefit {
             font-size: 0.78rem;
             color: var(--text-secondary);
@@ -681,7 +680,7 @@
                     btn.disabled = true;
                     btn.textContent = '🔌 Connect Wallet';
                 } else if (!isCorrectNetwork) {
-                    btn.disabled = true;
+                    btn.disabled = false; // Enable to allow switching
                     btn.textContent = '🔄 Switch to Base';
                 } else if (tier.minted >= tier.maxSupply) {
                     btn.disabled = true;
@@ -719,33 +718,71 @@
                 updateUI();
             }
 
+            // ✅ Network switching function – now added!
+            async function switchToBase() {
+                if (!window.ethereum) return;
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: CONFIG.chainIdHex }],
+                    });
+                } catch (switchError) {
+                    // This error code indicates that the chain has not been added to MetaMask.
+                    if (switchError.code === 4902) {
+                        try {
+                            await window.ethereum.request({
+                                method: 'wallet_addEthereumChain',
+                                params: [{
+                                    chainId: CONFIG.chainIdHex,
+                                    chainName: 'Base',
+                                    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                                    rpcUrls: [CONFIG.rpcUrl],
+                                    blockExplorerUrls: [CONFIG.blockExplorer],
+                                }],
+                            });
+                        } catch (addError) {
+                            console.error('Failed to add Base network', addError);
+                        }
+                    }
+                }
+                // Network will be updated via the 'chainChanged' event listener
+            }
+
+            // Modified executeMint: if on wrong network, switch first
+            window.executeMint = async function() {
+                if (!walletAddress) {
+                    return alert('Connect your wallet first.');
+                }
+                if (!isCorrectNetwork) {
+                    await switchToBase();
+                    // The chainChanged event will update the UI; just wait a moment
+                    return;
+                }
+                const tier = CONFIG.tiers[selectedTier];
+                if (tier.minted >= tier.maxSupply) {
+                    alert('All NFTs in this tier have been minted.');
+                    return;
+                }
+                // Demo mint (replace with actual contract call)
+                alert(`Minting ${mintAmount}x ${tier.name} for ${(tier.priceETH * mintAmount).toFixed(6)} ETH to wallet ${CONFIG.receiverWallet}`);
+            };
+
             window.ethereum?.on('chainChanged', checkNetwork);
             window.ethereum?.on('accountsChanged', async (accs) => {
                 if (accs.length) {
                     walletAddress = accs[0];
                     provider = new ethers.BrowserProvider(window.ethereum);
                     signer = await provider.getSigner();
-                    document.getElementById('walletDisplay').textContent = walletAddress.slice(0,
-                        6) + '...' + walletAddress.slice(-4);
-                } else { walletAddress = null; }
+                    document.getElementById('walletDisplay').textContent = walletAddress.slice(0,6) + '...' + walletAddress.slice(-4);
+                } else { 
+                    walletAddress = null; 
+                    document.getElementById('walletDisplay').style.display = 'none';
+                }
                 updateUI();
             });
 
-            async function executeMint() {
-                // Full minting logic (identical to previous robust implementation)
-                // Included here as a placeholder – replace with your actual deployed contract call.
-                if (!walletAddress || !isCorrectNetwork || selectedTier === null) return;
-                const tier = CONFIG.tiers[selectedTier];
-                if (tier.minted >= tier.maxSupply) {
-                    alert('Sold out');
-                    return;
-                }
-                alert(
-                    `Demo mint: ${mintAmount}x ${tier.name} for ${(tier.priceETH * mintAmount).toFixed(6)} ETH to wallet ${CONFIG.receiverWallet}`
-                    );
-            }
-            window.executeMint = executeMint;
-
+            // Initial check
+            checkNetwork();
             updateUI();
         })();
     </script>
